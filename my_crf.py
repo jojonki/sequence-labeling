@@ -3,13 +3,15 @@ import sys
 from collections import defaultdict as dd
 from math import exp, log
 
+N_ITERS = 10
 BOS, EOS = '<BOS>', '<EOS>'
 y2i = dd(lambda: len(y2i))
 l2_coeff = 1
-learning_rate = 0.1
+learning_rate = 1
 features = {}
 
 random.seed(1110)
+
 
 def debug(X, Z, w, alpha, beta):
     """周辺確率を足して１になるかチェック
@@ -43,6 +45,15 @@ def print_ab(alpha, T, name):
         print(f't={t}', [(k, v) for k, v in alpha.items() if k[1] == t])
 
 
+def print_w(w):
+    for k, v in w.items():
+        if k[0] == 'T' and v != 0.0:
+            print(f'{k}: {v:.3f}')
+    for k, v in w.items():
+        if k[0] == 'E' and v != 0.0:
+            print(f'{k}: {v:.3f}')
+
+
 def load_data(fpath):
     corpus = []
     V = set()
@@ -59,6 +70,8 @@ def load_data(fpath):
                 # tags.append(y2i[EOS])
                 tags.append(EOS)
                 corpus.append((words, tags))
+                words = [BOS]
+                tags = []
                 continue
             x, y = line.strip().split(' ', 1)
             words.append(x)
@@ -67,14 +80,6 @@ def load_data(fpath):
             tags.append(y)
     return corpus
 
-
-# def calc_feat(x, i, y_prev, y_crnt):
-def init_weight_and_features(corpus):
-    """TODO: calc hash is slow"""
-    # w = dd(lambda: random.random())
-    w = dd(lambda: 0)
-    feat = dd(lambda: 1)
-    return w, feat
 
 def forward_backward(X, w, T):
     # forward
@@ -99,7 +104,7 @@ def forward_backward(X, w, T):
                 alpha[(y, t)] += val * a_prev
 
         if t == T:
-            Z = alpha[(y, t)]
+            Z = alpha[(EOS, t)]
     print(f'Z = {Z:.3f}')
 
     # backward
@@ -124,63 +129,87 @@ def forward_backward(X, w, T):
                 val = exp(w[('T', y, y_next)] + w[('E', y, x)])
                 beta[(y, t)] += val * b_next
 
-    return alpha, beta, Z
+    return Z, alpha, beta
+
+
+def calc_grad(X, Y, w, T, Z, alpha, beta):
+    grad = dd(lambda: 0)
+    for t in range(1, T + 1):
+        y_prev, y = Y[t - 1], Y[t]
+        x = X[t]
+        features = [('T', y_prev, y)]
+        if t != T:
+            features += [('E', y, x)]
+        for ft in features:
+            grad[ft] = 1
+
+    likelihood = sum(grad[k] * w[k] for k in grad if k in w) - log(Z)
+    print(f'likelihood = {likelihood:.3f}, P(y|x) = {exp(likelihood):.5f}')
+
+    for t in range(1, T):
+        if t == 1:
+            y_prev_list = [BOS]
+        else:
+            y_prev_list = y2i.keys()
+        if t == T - 1:
+            y_list = [EOS]
+        else:
+            y_list = y2i.keys()
+
+        for y_prev in y_prev_list:
+            for y in y_list:
+                # P(yt-1, yt|x) = (1/Z) * exp(w・φ(yt, yt-1)) * a(yt-1, t-1) * b(yt, t)
+                val = exp(w[('T', y_prev, y)] + w[('E', y, x)])
+                a = alpha[(y_prev, t - 1)]
+                b = beta[(y, t)]
+                p = val * a * b / Z
+
+                features = [('T', y_prev, y)]
+                if t != T:
+                    features += [('E', y, x)]
+                for ft in features:
+                    grad[ft] -= p
+    return grad
 
 
 def main():
     corpus = load_data(sys.argv[1])
 
-    w, features = init_weight_and_features(corpus)
-    for iter_num in range(1, 30):
+    w = dd(lambda: 0)
+    feat = dd(lambda: 1)
+    for iter_num in range(1, N_ITERS + 1):
         print(f'-------Iter {iter_num} --------')
         for X, Y in corpus:
             T = len(Y) - 1  # -1 for EOS
-            alpha, beta, Z = forward_backward(X, w, T)
-
+            Z, alpha, beta = forward_backward(X, w, T)
             debug(X, Z, w, alpha, beta)
 
-            # grad
-            grad = dd(lambda: 0)
-            for t in range(1, T + 1):
-                y_prev, y = Y[t - 1], Y[t]
-                x = X[t]
-                features = [('T', y_prev, y)]
-                if t != T:
-                    features += [('E', y, x)]
-                for ft in features:
-                    grad[ft] = 1
-
-            likelihood = sum(grad[k] * w[k] for k in grad if k in w) - log(Z)
-            print(f'likelihood={likelihood:.3f}, P(y|x)={exp(likelihood):.8f}')
-
-            for t in range(1, T):
-                if t == 1:
-                    y_prev_list = [BOS]
-                else:
-                    y_prev_list = y2i.keys()
-                if t == T - 1:
-                    y_list = [EOS]
-                else:
-                    y_list = y2i.keys()
-
-                for y_prev in y_prev_list:
-                    for y in y_list:
-                        # P(yt-1, yt|x) = (1/Z) * exp(w・φ(yt, yt-1)) * a(yt-1, t-1) * b(yt, t)
-                        val = exp(w[('T', y_prev, y)] + w[('E', y, x)])
-                        a = alpha[(y_prev, t - 1)]
-                        b = beta[(y, t)]
-                        p = val * a * b / Z
-
-                        features = [('T', y_prev, y)]
-                        if t != T:
-                            features += [('E', y, x)]
-                        for ft in features:
-                            grad[ft] -= p
+            grad = calc_grad(X, Y, w, T, Z, alpha, beta)
 
             # print(f'iter={iter_num}, grad={dict(grad)}')
-            print(f'w: {dict(w)}')
+            print_w(w)
             for k, v in grad.items():
                 w[k] += learning_rate * (v - l2_coeff * (v * v))
+
+    # test
+    X = [BOS, 'i', 'have', 'books', 'in', 'tokyo', EOS]
+    T = len(X) - 1
+    Z, alpha, beta = forward_backward(X, w, T)
+    y_prev = BOS
+    for t in range(1, T):
+        x = X[t]
+        y = None
+        max_p = -float('inf')
+        for y_cand in y2i:
+            val = exp(w[('T', y_prev, y_cand)] + w[('E', y_cand, x)])
+            a = alpha[(y_prev, t - 1)]
+            b = beta[(y_cand, t)]
+            p = val * a * b / Z
+            if p >= max_p:
+                max_p = p
+                y = y_cand
+        print(f't={t}: {x}: {y}')
+        y_prev = y
 
 
 if __name__ == '__main__':
