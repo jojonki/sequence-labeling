@@ -8,7 +8,7 @@ l2_coeff = 1
 learning_rate = 10
 features = {}
 
-random.seed(111)
+random.seed(1110)
 
 def print_ab(alpha, T, name):
     print(name)
@@ -45,7 +45,7 @@ def load_data(fpath):
 def init_weight_and_features(corpus):
     """TODO: calc hash is slow"""
     w = dd(lambda: random.random())
-    # w = dd(lambda: 0)
+    w = dd(lambda: 0)
     feat = dd(lambda: 0)
     # for X, Y in corpus:
     #     for t, (x, y) in enumerate(zip(X, Y)):
@@ -74,16 +74,22 @@ def main():
         alpha = dd(lambda: 0)
         alpha[(BOS, 0)] = 1
         for t in range(1, T + 1):
-            y, x = Y[t], X[t]
+            # y, x = Y[t], X[t]
+            x = X[t]
             if t == 1:
-                y_pred_list = [BOS]
+                y_prev_list = [BOS]
             else:
-                y_pred_list = y2i.keys()
+                y_prev_list = y2i.keys()
+            if t == T:
+                y_list = [EOS]
+            else:
+                y_list = y2i.keys()
 
-            for y_pred in y_pred_list:
-                a_prev = alpha[(y_pred, t - 1)]
-                val = exp(w[('T', y_pred, y)] + w[('E', y, x)])
-                alpha[(y, t)] += val * a_prev
+            for y in y_list:
+                for y_prev in y_prev_list:
+                    a_prev = alpha[(y_prev, t - 1)]
+                    val = exp(w[('T', y_prev, y)] + w[('E', y, x)])
+                    alpha[(y, t)] += val * a_prev
 
             if t == T:
                 Z = alpha[(y, t)]
@@ -93,36 +99,44 @@ def main():
         beta = dd(lambda: 0)
         beta[(EOS, T)] = 1
         for t in reversed(range(T)):
-            y, x = Y[t], X[t]
+            # y, x = Y[t], X[t]
+            x = X[t]
             if t == T - 1:
                 y_next_list = [EOS]
             else:
                 y_next_list = y2i.keys()
 
-            for y_next in y_next_list:
-                b_next = beta[(y_next, t + 1)]
-                val = exp(w[('T', y, y_next)] + w[('E', y, x)])
-                beta[(y, t)] += val * b_next
+            if t == 0:
+                y_list = [BOS]
+            else:
+                y_list = y2i.keys()
+
+            for y in y_list:
+                for y_next in y_next_list:
+                    b_next = beta[(y_next, t + 1)]
+                    val = exp(w[('T', y, y_next)] + w[('E', y, x)])
+                    beta[(y, t)] += val * b_next
 
         print_ab(alpha, T + 1, 'alpha')
         print_ab(beta, T + 1, 'beta')
         # P(y3,y2|x) = (1/Z)*exp(w・φ(y3, y2))*a(y2, 2)*b(y3, 3)
-        t = 3
+        t = 1
         P = 0
         x = X[t]
+        print('y2i', dict(y2i))
         print(f'calc P(y{t}, y{t-1}|x)')
-        for y_prev in y2i:
+        for y_prev in [BOS]:
             for y in y2i:
                 val = exp(w[('T', y_prev, y)] + w[('E', y, x)])
                 a = alpha[(y_prev, t - 1)]
                 b = beta[(y, t)]
                 this_p = val * a * b
                 print(
-                    f'P += exp(w・φ(y3={y}, y2={y_prev}) * a({y_prev}, {t-1}) * b({y}, {t})' + \
+                    f'P += exp(w・φ(y{t-1}={y_prev}, y{t}={y}) * a({y_prev}, {t-1}) * b({y}, {t})' + \
                             f'= {this_p:.2f}'
                 )
                 P += this_p
-        print(f'P(y{t}, y{t-1}|x) = {P/Z} ({P:.3f}/{Z:.3f})')
+        print(f'P(y{t}, y{t-1}|x) = {P/Z:.3f} ({P:.3f}/{Z:.3f})')
 
     pass
     return
