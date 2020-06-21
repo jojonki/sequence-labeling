@@ -76,6 +76,56 @@ def init_weight_and_features(corpus):
     feat = dd(lambda: 1)
     return w, feat
 
+def forward_backward(X, w, T):
+    # forward
+    alpha = dd(lambda: 0)
+    alpha[(BOS, 0)] = 1
+    for t in range(1, T + 1):
+        # y, x = Y[t], X[t]
+        x = X[t]
+        if t == 1:
+            y_prev_list = [BOS]
+        else:
+            y_prev_list = y2i.keys()
+        if t == T:
+            y_list = [EOS]
+        else:
+            y_list = y2i.keys()
+
+        for y in y_list:
+            for y_prev in y_prev_list:
+                a_prev = alpha[(y_prev, t - 1)]
+                val = exp(w[('T', y_prev, y)] + w[('E', y, x)])
+                alpha[(y, t)] += val * a_prev
+
+        if t == T:
+            Z = alpha[(y, t)]
+    print(f'Z = {Z:.3f}')
+
+    # backward
+    beta = dd(lambda: 0)
+    beta[(EOS, T)] = 1
+    for t in reversed(range(T)):
+        # y, x = Y[t], X[t]
+        x = X[t]
+        if t == T - 1:
+            y_next_list = [EOS]
+        else:
+            y_next_list = y2i.keys()
+
+        if t == 0:
+            y_list = [BOS]
+        else:
+            y_list = y2i.keys()
+
+        for y in y_list:
+            for y_next in y_next_list:
+                b_next = beta[(y_next, t + 1)]
+                val = exp(w[('T', y, y_next)] + w[('E', y, x)])
+                beta[(y, t)] += val * b_next
+
+    return alpha, beta, Z
+
 
 def main():
     corpus = load_data(sys.argv[1])
@@ -85,56 +135,8 @@ def main():
         print(f'-------Iter {iter_num} --------')
         for X, Y in corpus:
             T = len(Y) - 1  # -1 for EOS
+            alpha, beta, Z = forward_backward(X, w, T)
 
-            # forward
-            alpha = dd(lambda: 0)
-            alpha[(BOS, 0)] = 1
-            for t in range(1, T + 1):
-                # y, x = Y[t], X[t]
-                x = X[t]
-                if t == 1:
-                    y_prev_list = [BOS]
-                else:
-                    y_prev_list = y2i.keys()
-                if t == T:
-                    y_list = [EOS]
-                else:
-                    y_list = y2i.keys()
-
-                for y in y_list:
-                    for y_prev in y_prev_list:
-                        a_prev = alpha[(y_prev, t - 1)]
-                        val = exp(w[('T', y_prev, y)] + w[('E', y, x)])
-                        alpha[(y, t)] += val * a_prev
-
-                if t == T:
-                    Z = alpha[(y, t)]
-            print(f'Z = {Z:.3f}')
-
-            # backward
-            beta = dd(lambda: 0)
-            beta[(EOS, T)] = 1
-            for t in reversed(range(T)):
-                # y, x = Y[t], X[t]
-                x = X[t]
-                if t == T - 1:
-                    y_next_list = [EOS]
-                else:
-                    y_next_list = y2i.keys()
-
-                if t == 0:
-                    y_list = [BOS]
-                else:
-                    y_list = y2i.keys()
-
-                for y in y_list:
-                    for y_next in y_next_list:
-                        b_next = beta[(y_next, t + 1)]
-                        val = exp(w[('T', y, y_next)] + w[('E', y, x)])
-                        beta[(y, t)] += val * b_next
-
-            # print_ab(alpha, T + 1, 'alpha')
-            # print_ab(beta, T + 1, 'beta')
             debug(X, Z, w, alpha, beta)
 
             # grad
