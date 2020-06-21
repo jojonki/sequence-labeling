@@ -111,7 +111,7 @@ def calc_gradient(x, y, w):
                     calc_f(x, i - 1, l, w, e_prob, f_prob) - norm)
                 # Subtract the expectation of the features
                 for k, v in calc_feat(x, i, l, r).items():
-                    grad[k] -= v * p
+                    grad[k] -= v * p # φ(x, y) - p*v
     # print grad
     # Return the gradient and likelihood
     return (grad, likelihood)
