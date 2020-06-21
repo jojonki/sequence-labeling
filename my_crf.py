@@ -5,7 +5,7 @@ from math import exp, log
 BOS, EOS = '<BOS>', '<EOS>'
 y2i = dd(lambda: len(y2i))
 l2_coeff = 1
-learning_rate = 10
+learning_rate = 0.2
 features = {}
 
 random.seed(1110)
@@ -44,130 +44,132 @@ def load_data(fpath):
 # def calc_feat(x, i, y_prev, y_crnt):
 def init_weight_and_features(corpus):
     """TODO: calc hash is slow"""
-    w = dd(lambda: random.random())
+    # w = dd(lambda: random.random())
     w = dd(lambda: 0)
     feat = dd(lambda: 1)
-    # for X, Y in corpus:
-    #     for t, (x, y) in enumerate(zip(X, Y)):
-    #         t += 1 # +1 offset
-    #         y_prev = Y[t-1]
-    #         keys = [('T', y_prev, y), ('E', y, x)]
-    #         for k in keys:
-    #             feat[k] = 1
-    #             w[k] = 1
     return w, feat
 
 
-def calc_gradient(x, y, w):
-    alpha = {()}
-
-
 def main():
-    """main.
-    """
     corpus = load_data('./train.data')
+
     w, features = init_weight_and_features(corpus)
-    for X, Y in corpus:
-        T = len(Y) - 1  # -1 for EOS
+    for iter_num in range(1, 4):
+        print(f'-------Iter {iter_num} --------')
+        for X, Y in corpus:
+            T = len(Y) - 1  # -1 for EOS
 
-        # forward
-        alpha = dd(lambda: 0)
-        alpha[(BOS, 0)] = 1
-        for t in range(1, T + 1):
-            # y, x = Y[t], X[t]
-            x = X[t]
-            if t == 1:
-                y_prev_list = [BOS]
-            else:
-                y_prev_list = y2i.keys()
-            if t == T:
-                y_list = [EOS]
-            else:
-                y_list = y2i.keys()
+            # forward
+            alpha = dd(lambda: 0)
+            alpha[(BOS, 0)] = 1
+            for t in range(1, T + 1):
+                # y, x = Y[t], X[t]
+                x = X[t]
+                if t == 1:
+                    y_prev_list = [BOS]
+                else:
+                    y_prev_list = y2i.keys()
+                if t == T:
+                    y_list = [EOS]
+                else:
+                    y_list = y2i.keys()
 
-            for y in y_list:
+                for y in y_list:
+                    for y_prev in y_prev_list:
+                        a_prev = alpha[(y_prev, t - 1)]
+                        val = exp(w[('T', y_prev, y)] + w[('E', y, x)])
+                        alpha[(y, t)] += val * a_prev
+
+                if t == T:
+                    Z = alpha[(y, t)]
+            print(f'Z = {Z:.3f}')
+
+            # backward
+            beta = dd(lambda: 0)
+            beta[(EOS, T)] = 1
+            for t in reversed(range(T)):
+                # y, x = Y[t], X[t]
+                x = X[t]
+                if t == T - 1:
+                    y_next_list = [EOS]
+                else:
+                    y_next_list = y2i.keys()
+
+                if t == 0:
+                    y_list = [BOS]
+                else:
+                    y_list = y2i.keys()
+
+                for y in y_list:
+                    for y_next in y_next_list:
+                        b_next = beta[(y_next, t + 1)]
+                        val = exp(w[('T', y, y_next)] + w[('E', y, x)])
+                        beta[(y, t)] += val * b_next
+
+            print_ab(alpha, T + 1, 'alpha')
+            print_ab(beta, T + 1, 'beta')
+            if False: # debug
+                # P(y3,y2|x) = (1/Z)*exp(w・φ(y3, y2))*a(y2, 2)*b(y3, 3)
+                t = 3
+                P = 0
+                x = X[t]
+                print('y2i', dict(y2i))
+                print(f'calc P(y{t}, y{t-1}|x)')
+                # for y_prev in [BOS]:
+                for y_prev in y2i:
+                    for y in y2i:
+                        val = exp(w[('T', y_prev, y)] + w[('E', y, x)])
+                        a = alpha[(y_prev, t - 1)]
+                        b = beta[(y, t)]
+                        this_p = val * a * b
+                        print(
+                            f'P += exp(w・φ(y{t-1}={y_prev}, y{t}={y}) * a({y_prev}, {t-1}) * b({y}, {t})' + \
+                                    f' = {this_p/Z:.2f} ({this_p:.3f}/{Z:.3f})'
+                        )
+                        P += this_p / Z
+                print(f'P(y{t}, y{t-1}|x) = {P:.3f}')
+
+            # grad
+            grad = dd(lambda: 0)
+            for t in range(1, T+1):
+                y_prev, y = Y[t-1], Y[t]
+                x = X[t]
+                features = [('T', y_prev, y)]
+                if t != T:
+                    features += [('E', y, x)]
+                for ft in features:
+                    grad[ft] = 1
+            likelihood = sum(grad[k] * w[k] for k in grad if k in w) - Z
+            print(f'likelihood={likelihood:.3f}')
+
+            for t in range(1, T):
+                if t == 1:
+                    y_prev_list = [BOS]
+                else:
+                    y_prev_list = y2i.keys()
+                if t == T-1:
+                    y_list = [EOS]
+                else:
+                    y_list = y2i.keys()
+
                 for y_prev in y_prev_list:
-                    a_prev = alpha[(y_prev, t - 1)]
-                    val = exp(w[('T', y_prev, y)] + w[('E', y, x)])
-                    alpha[(y, t)] += val * a_prev
+                    for y in y_list:
+                        # P(yt-1, yt|x) = (1/Z) * exp(w・φ(yt, yt-1)) * a(yt-1, t-1) * b(yt, t)
+                        val = exp(w[('T', y_prev, y)] + w[('E', y, x)])
+                        a = alpha[(y_prev, t-1)]
+                        b = beta[(y, t)]
+                        p = val * a * b / Z
 
-            if t == T:
-                Z = alpha[(y, t)]
-        print(f'Z = {Z:.3f}')
+                        features = [('T', y_prev, y)]
+                        if t != T:
+                            features += [('E', y, x)]
+                        for ft in features:
+                            grad[ft] -= p
 
-        # backward
-        beta = dd(lambda: 0)
-        beta[(EOS, T)] = 1
-        for t in reversed(range(T)):
-            # y, x = Y[t], X[t]
-            x = X[t]
-            if t == T - 1:
-                y_next_list = [EOS]
-            else:
-                y_next_list = y2i.keys()
-
-            if t == 0:
-                y_list = [BOS]
-            else:
-                y_list = y2i.keys()
-
-            for y in y_list:
-                for y_next in y_next_list:
-                    b_next = beta[(y_next, t + 1)]
-                    val = exp(w[('T', y, y_next)] + w[('E', y, x)])
-                    beta[(y, t)] += val * b_next
-
-        print_ab(alpha, T + 1, 'alpha')
-        print_ab(beta, T + 1, 'beta')
-        # P(y3,y2|x) = (1/Z)*exp(w・φ(y3, y2))*a(y2, 2)*b(y3, 3)
-        t = 3
-        P = 0
-        x = X[t]
-        print('y2i', dict(y2i))
-        print(f'calc P(y{t}, y{t-1}|x)')
-        # for y_prev in [BOS]:
-        for y_prev in y2i:
-            for y in y2i:
-                val = exp(w[('T', y_prev, y)] + w[('E', y, x)])
-                a = alpha[(y_prev, t - 1)]
-                b = beta[(y, t)]
-                this_p = val * a * b
-                print(
-                    f'P += exp(w・φ(y{t-1}={y_prev}, y{t}={y}) * a({y_prev}, {t-1}) * b({y}, {t})' + \
-                            f' = {this_p/Z:.2f} ({this_p:.3f}/{Z:.3f})'
-                )
-                P += this_p / Z
-        print(f'P(y{t}, y{t-1}|x) = {P:.3f}')
-
-        # grad
-
-
-
-    pass
-    return
-
-    for iter_num in range(1, 3):
-        grad = dd(lambda: 0)
-        regularized_likelihood = 0
-        for k, v in w.items():
-            grad[k] -= 2 * v * l2_coeff
-            regularized_likelihood -= v * v * l2_coeff
-
-        likelihood = 0
-        for x, y in corpus:
-            my_grad, my_lik = calc_gradient(x, y, w)
-            for k, v in my_grad.items():
-                grad[k] += v
-            likelihood += my_lik
-
-        l1 = sum([abs(k) for k in grad.values()])
-        print(
-            f'Iter {iter_num} likelihood: lik={likelihood},'\
-                    'ref_lik={regularized_likelihood}, gradL1={l1}'
-        )
-
-        for k, v in grad.items():
-            w[k] += v / l1 * learning_rate
+            # print(f'iter={iter_num}, grad={dict(grad)}')
+            print(f'w: {dict(w)}')
+            for k, v in grad.items():
+                w[k] += learning_rate * (v - l2_coeff * (v*v))
 
 
 if __name__ == '__main__':
