@@ -46,7 +46,7 @@ def init_weight_and_features(corpus):
     """TODO: calc hash is slow"""
     w = dd(lambda: random.random())
     w = dd(lambda: 0)
-    feat = dd(lambda: 0)
+    feat = dd(lambda: 1)
     # for X, Y in corpus:
     #     for t, (x, y) in enumerate(zip(X, Y)):
     #         t += 1 # +1 offset
@@ -120,12 +120,13 @@ def main():
         print_ab(alpha, T + 1, 'alpha')
         print_ab(beta, T + 1, 'beta')
         # P(y3,y2|x) = (1/Z)*exp(w・φ(y3, y2))*a(y2, 2)*b(y3, 3)
-        t = 1
+        t = 3
         P = 0
         x = X[t]
         print('y2i', dict(y2i))
         print(f'calc P(y{t}, y{t-1}|x)')
-        for y_prev in [BOS]:
+        # for y_prev in [BOS]:
+        for y_prev in y2i:
             for y in y2i:
                 val = exp(w[('T', y_prev, y)] + w[('E', y, x)])
                 a = alpha[(y_prev, t - 1)]
@@ -133,10 +134,14 @@ def main():
                 this_p = val * a * b
                 print(
                     f'P += exp(w・φ(y{t-1}={y_prev}, y{t}={y}) * a({y_prev}, {t-1}) * b({y}, {t})' + \
-                            f'= {this_p:.2f}'
+                            f' = {this_p/Z:.2f} ({this_p:.3f}/{Z:.3f})'
                 )
-                P += this_p
-        print(f'P(y{t}, y{t-1}|x) = {P/Z:.3f} ({P:.3f}/{Z:.3f})')
+                P += this_p / Z
+        print(f'P(y{t}, y{t-1}|x) = {P:.3f}')
+
+        # grad
+
+
 
     pass
     return
