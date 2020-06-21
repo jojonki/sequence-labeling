@@ -38,8 +38,12 @@ def logsumexp(A):
 
 
 ############# Functions for memoized probability
-def calc_feat(x, i, l, r):
-    return {("T", l, r): 1, ("E", r, x[i]): 1}
+def calc_feat(x, i, y_prev, y_crnt):
+    """
+    T: Transition, E; Emission (unigram feature)
+    calc_feat(x, i, y[i - 1], y[i])
+    """
+    return {("T", y_prev, y_crnt): 1, ("E", y_crnt, x[i]): 1}
 
 
 def calc_e(x, i, l, r, w, e_prob):
@@ -62,6 +66,14 @@ def calc_f(x, i, l, w, e, f):
 
 
 def calc_b(x, i, r, w, e, b):
+    """
+    x: x
+    i: index (current timestep)
+    r: y (output label)
+    w: weight
+    e: e_prob
+    b: b_prob
+    """
     if (i, r) not in b:
         if i == len(x) - 1:
             b[i, 0] = 0
@@ -76,17 +88,18 @@ def calc_b(x, i, r, w, e, b):
 
 ############# Function to calculate gradient ######
 def calc_gradient(x, y, w):
-    f_prob = {(0, 0): 0}
-    b_prob = {(len(x) - 1, 0): 0}
-    e_prob = {}
+    f_prob = {(0, 0): 0} # alpha, forward probabity
+    b_prob = {(len(x) - 1, 0): 0} # beta, backward probability
+    e_prob = {} # current
     grad = defaultdict(lambda: 0)
     # Add the features for the numerator
     for i in range(1, len(x)):
         for k, v in calc_feat(x, i, y[i - 1], y[i]).items():
+            # [{('T', 0, 1): 1}, {('E', 1, 'He'):1}]
             grad[k] += v
     # Calculate the likelihood and normalizing constant
     norm = calc_b(x, 0, 0, w, e_prob, b_prob)
-    lik = dot(grad, w) - norm
+    likelihood = dot(grad, w) - norm
     # Subtract the features for the denominator
     for i in range(1, len(x)):
         for l in (range(1, len(tagids)) if i != 1 else [0]):
@@ -101,7 +114,7 @@ def calc_gradient(x, y, w):
                     grad[k] -= v * p
     # print grad
     # Return the gradient and likelihood
-    return (grad, lik)
+    return (grad, likelihood)
 
 
 ############### Main training loop
@@ -125,20 +138,20 @@ if __name__ == '__main__':
     for iternum in range(1, 50 + 1):
         grad = defaultdict(lambda: 0)
         # Perform regularization
-        reg_lik = 0
+        reg_likelihood = 0
         for k, v in w.items():
             grad[k] -= 2 * v * l2_coeff
-            reg_lik -= v * v * l2_coeff
+            reg_likelihood -= v * v * l2_coeff
         # Get the gradients and likelihoods
-        lik = 0
+        likelihood = 0
         for x, y in corpus:
             my_grad, my_lik = calc_gradient(x, y, w)
             for k, v in my_grad.items():
                 grad[k] += v
-            lik += my_lik
+            likelihood += my_lik
         l1 = sum([abs(k) for k in grad.values()])
         print("Iter %r likelihood: lik=%r, reg=%r, reg+lik=%r gradL1=%r" %
-              (iternum, lik, reg_lik, lik + reg_lik, l1))
+              (iternum, likelihood, reg_likelihood, likelihood + reg_likelihood, l1))
         # Here we are updating the weights with SGD, but a better optimization
         # algorithm is necessary if you want to use this in practice.
         for k, v in grad.items():
