@@ -165,7 +165,7 @@ def calc_grad(X, Y, w, T, Z, alpha, beta):
                 p = val * a * b / Z
 
                 features = [('T', y_prev, y)]
-                if t != T:
+                if t != T - 1:
                     features += [('E', y, x)]
                 for ft in features:
                     grad[ft] -= p
