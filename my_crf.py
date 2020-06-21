@@ -1,14 +1,41 @@
 import random
+import sys
 from collections import defaultdict as dd
 from math import exp, log
 
 BOS, EOS = '<BOS>', '<EOS>'
 y2i = dd(lambda: len(y2i))
 l2_coeff = 1
-learning_rate = 0.2
+learning_rate = 0.1
 features = {}
 
 random.seed(1110)
+
+def debug(X, Z, w, alpha, beta):
+    """周辺確率を足して１になるかチェック
+    P(y3,y2|x) = (1/Z)*exp(w・φ(y3, y2))*a(y2, 2)*b(y3, 3)
+    """
+    t = 3
+    P = 0
+    x = X[t]
+    # print('y2i', dict(y2i))
+    # print(f'calc P(y{t}, y{t-1}|x)')
+    # for y_prev in [BOS]:
+    for y_prev in y2i:
+        for y in y2i:
+            val = exp(w[('T', y_prev, y)] + w[('E', y, x)])
+            a = alpha[(y_prev, t - 1)]
+            b = beta[(y, t)]
+            this_p = val * a * b
+            # print(
+            #     f'P += exp(w・φ(y{t-1}={y_prev}, y{t}={y}) * a({y_prev}, {t-1}) * b({y}, {t})' + \
+            #             f' = {this_p/Z:.2f} ({this_p:.3f}/{Z:.3f})'
+            # )
+            P += this_p / Z
+    epsilon = 0.0001
+    assert 1.0 - epsilon <= P <= 1.0 + epsilon
+    # print(f'P(y{t}, y{t-1}|x) = {P:.3f}')
+
 
 def print_ab(alpha, T, name):
     print(name)
@@ -51,10 +78,10 @@ def init_weight_and_features(corpus):
 
 
 def main():
-    corpus = load_data('./train.data')
+    corpus = load_data(sys.argv[1])
 
     w, features = init_weight_and_features(corpus)
-    for iter_num in range(1, 4):
+    for iter_num in range(1, 30):
         print(f'-------Iter {iter_num} --------')
         for X, Y in corpus:
             T = len(Y) - 1  # -1 for EOS
@@ -106,48 +133,30 @@ def main():
                         val = exp(w[('T', y, y_next)] + w[('E', y, x)])
                         beta[(y, t)] += val * b_next
 
-            print_ab(alpha, T + 1, 'alpha')
-            print_ab(beta, T + 1, 'beta')
-            if False: # debug
-                # P(y3,y2|x) = (1/Z)*exp(w・φ(y3, y2))*a(y2, 2)*b(y3, 3)
-                t = 3
-                P = 0
-                x = X[t]
-                print('y2i', dict(y2i))
-                print(f'calc P(y{t}, y{t-1}|x)')
-                # for y_prev in [BOS]:
-                for y_prev in y2i:
-                    for y in y2i:
-                        val = exp(w[('T', y_prev, y)] + w[('E', y, x)])
-                        a = alpha[(y_prev, t - 1)]
-                        b = beta[(y, t)]
-                        this_p = val * a * b
-                        print(
-                            f'P += exp(w・φ(y{t-1}={y_prev}, y{t}={y}) * a({y_prev}, {t-1}) * b({y}, {t})' + \
-                                    f' = {this_p/Z:.2f} ({this_p:.3f}/{Z:.3f})'
-                        )
-                        P += this_p / Z
-                print(f'P(y{t}, y{t-1}|x) = {P:.3f}')
+            # print_ab(alpha, T + 1, 'alpha')
+            # print_ab(beta, T + 1, 'beta')
+            debug(X, Z, w, alpha, beta)
 
             # grad
             grad = dd(lambda: 0)
-            for t in range(1, T+1):
-                y_prev, y = Y[t-1], Y[t]
+            for t in range(1, T + 1):
+                y_prev, y = Y[t - 1], Y[t]
                 x = X[t]
                 features = [('T', y_prev, y)]
                 if t != T:
                     features += [('E', y, x)]
                 for ft in features:
                     grad[ft] = 1
-            likelihood = sum(grad[k] * w[k] for k in grad if k in w) - Z
-            print(f'likelihood={likelihood:.3f}')
+
+            likelihood = sum(grad[k] * w[k] for k in grad if k in w) - log(Z)
+            print(f'likelihood={likelihood:.3f}, P(y|x)={exp(likelihood):.8f}')
 
             for t in range(1, T):
                 if t == 1:
                     y_prev_list = [BOS]
                 else:
                     y_prev_list = y2i.keys()
-                if t == T-1:
+                if t == T - 1:
                     y_list = [EOS]
                 else:
                     y_list = y2i.keys()
@@ -156,7 +165,7 @@ def main():
                     for y in y_list:
                         # P(yt-1, yt|x) = (1/Z) * exp(w・φ(yt, yt-1)) * a(yt-1, t-1) * b(yt, t)
                         val = exp(w[('T', y_prev, y)] + w[('E', y, x)])
-                        a = alpha[(y_prev, t-1)]
+                        a = alpha[(y_prev, t - 1)]
                         b = beta[(y, t)]
                         p = val * a * b / Z
 
@@ -169,7 +178,7 @@ def main():
             # print(f'iter={iter_num}, grad={dict(grad)}')
             print(f'w: {dict(w)}')
             for k, v in grad.items():
-                w[k] += learning_rate * (v - l2_coeff * (v*v))
+                w[k] += learning_rate * (v - l2_coeff * (v * v))
 
 
 if __name__ == '__main__':
